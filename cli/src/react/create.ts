@@ -342,7 +342,6 @@ figma.connect(${importName}, "${figmaNodeUrl}", {
 })`
 
   const codeConnect = `
-import React from 'react'
 import ${sourceExport === 'default' ? importName : `{ ${importName} }`} from '${importsPath}'
 import figma from '@figma/code-connect'
 
