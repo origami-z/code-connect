@@ -71,7 +71,7 @@ export function autoLinkComponents({
   linkedNodeIdsToFilepathExports,
   filepathExports,
 }: {
-  unconnectedComponents: FigmaRestApi.Component[]
+  unconnectedComponents: FigmaRestApi.ComponentWithPageInfo[]
   linkedNodeIdsToFilepathExports: Record<string, string>
   filepathExports: string[]
 }) {

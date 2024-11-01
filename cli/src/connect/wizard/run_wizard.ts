@@ -1,7 +1,12 @@
 import { BaseCommand, getAccessToken, getCodeConnectObjects, getDir } from '../../commands/connect'
 import prompts from 'prompts'
 import fs from 'fs'
-import { exitWithFeedbackMessage, findComponentsInDocument, parseFileKey } from '../helpers'
+import {
+  exitWithFeedbackMessage,
+  findComponentsWithinNode,
+  findComponentsWithPageInfoInDoc,
+  parseFileKey,
+} from '../helpers'
 import { FigmaRestApi, getApiUrl } from '../figma_rest_api'
 import { exitWithError, logger, success } from '../../common/logging'
 import {
@@ -39,7 +44,10 @@ import { autoLinkComponents } from './autolinking'
 import { extractDataAndGenerateAllPropsMappings } from './prop_mapping_helpers'
 import { isFetchError, request } from '../../common/fetch'
 
-type ConnectedComponentMappings = { componentName: string; filepathExport: string }[]
+type ConnectedComponentMappings = {
+  componentName: string
+  filepathExport: string
+}[]
 
 const NONE = '(None)'
 
@@ -81,20 +89,19 @@ async function fetchTopLevelComponentsFromFile({
       color: 'green',
     }).start()
 
-    const response = await (
-      process.env.CODE_CONNECT_MOCK_DOC_RESPONSE
-        ? Promise.resolve({
-            response: { status: 200 },
-            data: JSON.parse(
-              fs.readFileSync(process.env.CODE_CONNECT_MOCK_DOC_RESPONSE, 'utf-8'),
-            ) as CliDataResponse,
-          })
-        : request.get<CliDataResponse>(apiUrl, {
-            headers: {
-              'X-Figma-Token': accessToken,
-              'Content-Type': 'application/json',
-            },
-          })
+    const response = await (process.env.CODE_CONNECT_MOCK_DOC_RESPONSE
+      ? Promise.resolve({
+          response: { status: 200 },
+          data: JSON.parse(
+            fs.readFileSync(process.env.CODE_CONNECT_MOCK_DOC_RESPONSE, 'utf-8'),
+          ) as CliDataResponse,
+        })
+      : request.get<CliDataResponse>(apiUrl, {
+          headers: {
+            'X-Figma-Token': accessToken,
+            'Content-Type': 'application/json',
+          },
+        })
     ).finally(() => {
       if (cmd.verbose) {
         spinner.stopAndPersist()
@@ -104,7 +111,7 @@ async function fetchTopLevelComponentsFromFile({
     })
 
     if (response.response.status === 200) {
-      return findComponentsInDocument(response.data.document).filter(
+      return findComponentsWithPageInfoInDoc(response.data.document).filter(
         ({ id }) =>
           id in response.data.componentSets || !response.data.components[id].componentSetId,
       )
@@ -351,7 +358,9 @@ async function runManualLinking({
             {
               type: 'autocomplete',
               name: 'filepathExport',
-              message: `Choose an export of ${path.parse(pathToComponent).base} (type to filter results)`,
+              message: `Choose an export of ${
+                path.parse(pathToComponent).base
+              } (type to filter results)`,
               choices: fileExports,
               // default suggest uses .startsWith(input)
               suggest: (input, choices) =>
@@ -571,7 +580,7 @@ export function convertRemoteFileUrlToRelativePath({
 export async function getUnconnectedComponentsAndConnectedComponentMappings(
   cmd: BaseCommand,
   figmaFileUrl: string,
-  componentsFromFile: FigmaRestApi.Component[],
+  componentsFromFile: FigmaRestApi.ComponentWithPageInfo[],
   projectInfo: ProjectInfo<CodeConnectConfig> | ReactProjectInfo,
 ) {
   const dir = getDir(cmd)
@@ -592,7 +601,7 @@ export async function getUnconnectedComponentsAndConnectedComponentMappings(
     {} as Record<string, CodeConnectJSON>,
   )
 
-  const unconnectedComponents: FigmaRestApi.Component[] = []
+  const unconnectedComponents: FigmaRestApi.ComponentWithPageInfo[] = []
   const connectedComponentsMappings: ConnectedComponentMappings = []
 
   const gitRootPath = getGitRepoAbsolutePath(dir)
@@ -868,13 +877,10 @@ export async function runWizard(cmd: BaseCommand) {
     cmd,
   })
 
-  const unconnectedComponentsMap = unconnectedComponents.reduce(
-    (map, component) => {
-      map[component.id] = component
-      return map
-    },
-    {} as Record<string, FigmaRestApi.Component>,
-  )
+  const unconnectedComponentsMap = unconnectedComponents.reduce((map, component) => {
+    map[component.id] = component
+    return map
+  }, {} as Record<string, FigmaRestApi.Component>)
 
   await createCodeConnectFiles({
     linkedNodeIdsToFilepathExports,

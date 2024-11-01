@@ -39,7 +39,7 @@ export namespace FigmaRestApi {
 
   export interface Node {
     // we don't care about other node types
-    type: 'COMPONENT' | 'COMPONENT_SET' | 'OTHER'
+    type: 'COMPONENT' | 'COMPONENT_SET' | 'CANVAS' | 'OTHER'
     name: string
     id: string
     children: Node[]
@@ -48,6 +48,12 @@ export namespace FigmaRestApi {
   export interface Component extends Node {
     type: 'COMPONENT' | 'COMPONENT_SET'
     componentPropertyDefinitions: Record<string, ComponentPropertyDefinition>
+  }
+
+  export interface ComponentWithPageInfo extends Node {
+    type: 'COMPONENT' | 'COMPONENT_SET'
+    componentPropertyDefinitions: Record<string, ComponentPropertyDefinition>
+    page: Pick<Node, 'name' | 'id' | 'type'>
   }
 }
 
@@ -72,7 +78,9 @@ export async function getDocument(url: string, accessToken: string): Promise<Fig
     if (isFetchError(err)) {
       if (err.response) {
         logger.error(
-          `Failed to get node data from Figma (${err.response.status}): ${err.response.status} ${err.data?.err ?? err.data?.message}`,
+          `Failed to get node data from Figma (${err.response.status}): ${err.response.status} ${
+            err.data?.err ?? err.data?.message
+          }`,
         )
       } else {
         logger.error(`Failed to get node data from Figma: ${err.message}`)
