@@ -579,6 +579,22 @@ export function convertRemoteFileUrlToRelativePath({
   return path.relative(dir, absPath)
 }
 
+/**
+ * Very specific Salt skip logic
+ * @param c
+ */
+function shouldSkipComponent(c: FigmaRestApi.ComponentWithPageInfo): boolean {
+  // Any component name starts with ".", this includes nested ones "foo/.bar"
+  if (c.name.split('/').some((x) => x.startsWith('.'))) {
+    return true
+  }
+  // Do not include pattern components
+  if (c.page.name.includes('🅿')) {
+    return true
+  }
+  return false
+}
+
 export async function getUnconnectedComponentsAndConnectedComponentMappings(
   cmd: BaseCommand,
   figmaFileUrl: string,
@@ -621,7 +637,11 @@ export async function getUnconnectedComponentsAndConnectedComponentMappings(
         filepathExport: relativePath ?? '(Unknown file)',
       })
     } else {
-      unconnectedComponents.push(c)
+      if (shouldSkipComponent(c)) {
+        logger.info('Skipping component', c.name, 'on page', c.page.name)
+      } else {
+        unconnectedComponents.push(c)
+      }
     }
   })
 
