@@ -209,7 +209,7 @@ function formatComponentTitle(componentName: string, filepathExport: string | nu
 }
 
 export function getComponentChoicesForPrompt(
-  components: FigmaRestApi.Component[],
+  components: FigmaRestApi.ComponentWithPageInfo[],
   linkedNodeIdsToFilepathExports: Record<string, string>,
   connectedComponentsMappings: ConnectedComponentMappings,
   dir: string,
@@ -218,7 +218,9 @@ export function getComponentChoicesForPrompt(
     (longest, component) =>
       Math.max(
         longest,
-        'name' in component ? component.name.length : component.componentName.length,
+        'name' in component
+          ? component.page.name.length + component.name.length + 1
+          : component.componentName.length,
       ),
     0,
   )
@@ -233,12 +235,12 @@ export function getComponentChoicesForPrompt(
     .filter((c) => !linkedNodeIdsToFilepathExports[c.id])
     .sort(nameCompare)
 
-  const formatComponentChoice = (c: FigmaRestApi.Component) => {
+  const formatComponentChoice = (c: FigmaRestApi.ComponentWithPageInfo) => {
     const filepathExport = linkedNodeIdsToFilepathExports[c.id]
       ? path.relative(dir, linkedNodeIdsToFilepathExports[c.id])
       : null
     return {
-      title: formatComponentTitle(c.name, filepathExport, longestNameLength),
+      title: formatComponentTitle(c.page.name + '/' + c.name, filepathExport, longestNameLength),
       value: c.id,
       description: `${chalk.green('Edit link')}`,
     }
@@ -274,7 +276,7 @@ function getUnconnectedComponentChoices(componentPaths: string[], dir: string) {
 }
 
 type ManualLinkingArgs = {
-  unconnectedComponents: FigmaRestApi.Component[]
+  unconnectedComponents: FigmaRestApi.ComponentWithPageInfo[]
   connectedComponentsMappings: ConnectedComponentMappings
   linkedNodeIdsToFilepathExports: Record<string, string>
   filepathExports: string[]

@@ -100,7 +100,8 @@ export function autoLinkComponents({
   const searcher = new Searcher(searchSpace)
 
   unconnectedComponents.forEach((component) => {
-    const matchableName = component.name
+    // Include page name to seaerch space as well
+    const matchableName = component.page.name + ' ' + component.name
     const results = searcher.search(matchableName, { returnMatchData: true })
     const bestMatch = results[0]
     const filename = bestMatch?.item
