@@ -774,6 +774,8 @@ export async function runWizard(cmd: BaseCommand) {
     type: 'text',
     message: 'What is the URL of the Figma file containing your design system library?',
     name: 'figmaFileUrl',
+    initial:
+      'https://www.figma.com/design/ChsbbO7pLomT4F5H6tQyLP/Salt-(Next)-Components-%26-Patterns',
     validate: (value: string) => isValidFigmaUrl(value) || 'Please enter a valid Figma file URL.',
   })
 
