@@ -292,7 +292,21 @@ async function runManualLinking({
 }: ManualLinkingArgs) {
   const filesToComponentOptionsMap = getComponentOptionsMap(filepathExports)
   const dir = getDir(cmd)
+  let previousNodeId: string | undefined = undefined
   while (true) {
+    const componentChoices = getComponentChoicesForPrompt(
+      unconnectedComponents,
+      linkedNodeIdsToFilepathExports,
+      connectedComponentsMappings,
+      dir,
+    )
+    const initialComponentChoiceIndex: number = previousNodeId
+      ? componentChoices.findIndex((x) => {
+          if ('value' in x) {
+            return x.value === previousNodeId
+          } else return false
+        })
+      : 0
     // Don't show exit confirmation as we're relying on esc behavior
     const { nodeId } = await prompts(
       {
@@ -301,19 +315,17 @@ async function runManualLinking({
         message: `Select a link to edit (Press ${chalk.green(
           'esc',
         )} when you're ready to continue on)`,
-        choices: getComponentChoicesForPrompt(
-          unconnectedComponents,
-          linkedNodeIdsToFilepathExports,
-          connectedComponentsMappings,
-          dir,
-        ),
+        choices: componentChoices,
         warn: 'This component already has a local Code Connect file.',
         hint: ' ',
+        // preselect prev selected component
+        initial: initialComponentChoiceIndex,
       },
       {
         onSubmit: clearQuestion,
       },
     )
+    previousNodeId = nodeId
     if (!nodeId) {
       return
     }
