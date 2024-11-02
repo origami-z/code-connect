@@ -111,6 +111,9 @@ async function fetchTopLevelComponentsFromFile({
     })
 
     if (response.response.status === 200) {
+      // fs.writeFileSync('./mockFigmaResponse.json', JSON.stringify(response.data), {
+      //   encoding: 'utf-8',
+      // })
       return findComponentsWithPageInfoInDoc(response.data.document).filter(
         ({ id }) =>
           id in response.data.componentSets || !response.data.components[id].componentSetId,
@@ -310,12 +313,18 @@ async function runManualLinking({
     // Don't show exit confirmation as we're relying on esc behavior
     const { nodeId } = await prompts(
       {
-        type: 'select',
+        // type: 'select',
         name: 'nodeId',
         message: `Select a link to edit (Press ${chalk.green(
           'esc',
         )} when you're ready to continue on)`,
         choices: componentChoices,
+        type: 'autocomplete',
+        // default suggest uses .startsWith(input)
+        suggest: (input, choices) =>
+          Promise.resolve(
+            choices.filter((i) => i.title.toUpperCase().includes(input.toUpperCase())),
+          ),
         warn: 'This component already has a local Code Connect file.',
         hint: ' ',
         // preselect prev selected component
