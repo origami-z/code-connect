@@ -1,7 +1,7 @@
 import { FigmaRestApi, getApiUrl, getDocument } from '../connect/figma_rest_api'
 import {
   figmaUrlOfComponent,
-  findComponentsInDocument,
+  findComponentsWithinNode,
   normalizePropName,
   parseFileKey,
   parseNodeIds,
@@ -58,7 +58,7 @@ export async function getComponents(fileOrNode: string) {
 
   // `doc` in this case will only include the top frame(s) passed via `ids`. We omit the
   // nodeIds arg here because we want to return all components within the frame(s)
-  return findComponentsInDocument(doc).map((component) => ({
+  return findComponentsWithinNode(doc).map((component) => ({
     ...component,
     fileKey,
     figmaUrl: figmaUrlOfComponent(component, fileKey),

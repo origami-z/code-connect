@@ -1,7 +1,12 @@
 import { BaseCommand, getAccessToken, getCodeConnectObjects, getDir } from '../../commands/connect'
 import prompts from 'prompts'
 import fs from 'fs'
-import { exitWithFeedbackMessage, findComponentsInDocument, parseFileKey } from '../helpers'
+import {
+  exitWithFeedbackMessage,
+  findComponentsWithinNode,
+  findComponentsWithPageInfoInDoc,
+  parseFileKey,
+} from '../helpers'
 import { FigmaRestApi, getApiUrl } from '../figma_rest_api'
 import { exitWithError, logger, success } from '../../common/logging'
 import {
@@ -39,7 +44,10 @@ import { autoLinkComponents } from './autolinking'
 import { extractDataAndGenerateAllPropsMappings } from './prop_mapping_helpers'
 import { isFetchError, request } from '../../common/fetch'
 
-type ConnectedComponentMappings = { componentName: string; filepathExport: string }[]
+type ConnectedComponentMappings = {
+  componentName: string
+  filepathExport: string
+}[]
 
 const NONE = '(None)'
 
@@ -81,20 +89,19 @@ async function fetchTopLevelComponentsFromFile({
       color: 'green',
     }).start()
 
-    const response = await (
-      process.env.CODE_CONNECT_MOCK_DOC_RESPONSE
-        ? Promise.resolve({
-            response: { status: 200 },
-            data: JSON.parse(
-              fs.readFileSync(process.env.CODE_CONNECT_MOCK_DOC_RESPONSE, 'utf-8'),
-            ) as CliDataResponse,
-          })
-        : request.get<CliDataResponse>(apiUrl, {
-            headers: {
-              'X-Figma-Token': accessToken,
-              'Content-Type': 'application/json',
-            },
-          })
+    const response = await (process.env.CODE_CONNECT_MOCK_DOC_RESPONSE
+      ? Promise.resolve({
+          response: { status: 200 },
+          data: JSON.parse(
+            fs.readFileSync(process.env.CODE_CONNECT_MOCK_DOC_RESPONSE, 'utf-8'),
+          ) as CliDataResponse,
+        })
+      : request.get<CliDataResponse>(apiUrl, {
+          headers: {
+            'X-Figma-Token': accessToken,
+            'Content-Type': 'application/json',
+          },
+        })
     ).finally(() => {
       if (cmd.verbose) {
         spinner.stopAndPersist()
@@ -104,7 +111,10 @@ async function fetchTopLevelComponentsFromFile({
     })
 
     if (response.response.status === 200) {
-      return findComponentsInDocument(response.data.document).filter(
+      // fs.writeFileSync('./mockFigmaResponse.json', JSON.stringify(response.data), {
+      //   encoding: 'utf-8',
+      // })
+      return findComponentsWithPageInfoInDoc(response.data.document).filter(
         ({ id }) =>
           id in response.data.componentSets || !response.data.components[id].componentSetId,
       )
@@ -202,7 +212,7 @@ function formatComponentTitle(componentName: string, filepathExport: string | nu
 }
 
 export function getComponentChoicesForPrompt(
-  components: FigmaRestApi.Component[],
+  components: FigmaRestApi.ComponentWithPageInfo[],
   linkedNodeIdsToFilepathExports: Record<string, string>,
   connectedComponentsMappings: ConnectedComponentMappings,
   dir: string,
@@ -211,7 +221,9 @@ export function getComponentChoicesForPrompt(
     (longest, component) =>
       Math.max(
         longest,
-        'name' in component ? component.name.length : component.componentName.length,
+        'name' in component
+          ? component.page.name.length + component.name.length + 1
+          : component.componentName.length,
       ),
     0,
   )
@@ -226,12 +238,12 @@ export function getComponentChoicesForPrompt(
     .filter((c) => !linkedNodeIdsToFilepathExports[c.id])
     .sort(nameCompare)
 
-  const formatComponentChoice = (c: FigmaRestApi.Component) => {
+  const formatComponentChoice = (c: FigmaRestApi.ComponentWithPageInfo) => {
     const filepathExport = linkedNodeIdsToFilepathExports[c.id]
       ? path.relative(dir, linkedNodeIdsToFilepathExports[c.id])
       : null
     return {
-      title: formatComponentTitle(c.name, filepathExport, longestNameLength),
+      title: formatComponentTitle(c.page.name + '/' + c.name, filepathExport, longestNameLength),
       value: c.id,
       description: `${chalk.green('Edit link')}`,
     }
@@ -267,7 +279,7 @@ function getUnconnectedComponentChoices(componentPaths: string[], dir: string) {
 }
 
 type ManualLinkingArgs = {
-  unconnectedComponents: FigmaRestApi.Component[]
+  unconnectedComponents: FigmaRestApi.ComponentWithPageInfo[]
   connectedComponentsMappings: ConnectedComponentMappings
   linkedNodeIdsToFilepathExports: Record<string, string>
   filepathExports: string[]
@@ -283,28 +295,46 @@ async function runManualLinking({
 }: ManualLinkingArgs) {
   const filesToComponentOptionsMap = getComponentOptionsMap(filepathExports)
   const dir = getDir(cmd)
+  let previousNodeId: string | undefined = undefined
   while (true) {
+    const componentChoices = getComponentChoicesForPrompt(
+      unconnectedComponents,
+      linkedNodeIdsToFilepathExports,
+      connectedComponentsMappings,
+      dir,
+    )
+    const initialComponentChoiceIndex: number = previousNodeId
+      ? componentChoices.findIndex((x) => {
+          if ('value' in x) {
+            return x.value === previousNodeId
+          } else return false
+        })
+      : 0
     // Don't show exit confirmation as we're relying on esc behavior
     const { nodeId } = await prompts(
       {
-        type: 'select',
+        // type: 'select',
         name: 'nodeId',
         message: `Select a link to edit (Press ${chalk.green(
           'esc',
         )} when you're ready to continue on)`,
-        choices: getComponentChoicesForPrompt(
-          unconnectedComponents,
-          linkedNodeIdsToFilepathExports,
-          connectedComponentsMappings,
-          dir,
-        ),
+        choices: componentChoices,
+        type: 'autocomplete',
+        // default suggest uses .startsWith(input)
+        suggest: (input, choices) =>
+          Promise.resolve(
+            choices.filter((i) => i.title.toUpperCase().includes(input.toUpperCase())),
+          ),
         warn: 'This component already has a local Code Connect file.',
         hint: ' ',
+        // preselect prev selected component
+        initial: initialComponentChoiceIndex,
       },
       {
         onSubmit: clearQuestion,
       },
     )
+    previousNodeId = nodeId
     if (!nodeId) {
       return
     }
@@ -351,7 +381,9 @@ async function runManualLinking({
             {
               type: 'autocomplete',
               name: 'filepathExport',
-              message: `Choose an export of ${path.parse(pathToComponent).base} (type to filter results)`,
+              message: `Choose an export of ${
+                path.parse(pathToComponent).base
+              } (type to filter results)`,
               choices: fileExports,
               // default suggest uses .startsWith(input)
               suggest: (input, choices) =>
@@ -568,10 +600,26 @@ export function convertRemoteFileUrlToRelativePath({
   return path.relative(dir, absPath)
 }
 
+/**
+ * Very specific Salt skip logic
+ * @param c
+ */
+function shouldSkipComponent(c: FigmaRestApi.ComponentWithPageInfo): boolean {
+  // Any component name starts with ".", this includes nested ones "foo/.bar"
+  if (c.name.split('/').some((x) => x.startsWith('.'))) {
+    return true
+  }
+  // Do not include pattern components
+  if (c.page.name.includes('🅿')) {
+    return true
+  }
+  return false
+}
+
 export async function getUnconnectedComponentsAndConnectedComponentMappings(
   cmd: BaseCommand,
   figmaFileUrl: string,
-  componentsFromFile: FigmaRestApi.Component[],
+  componentsFromFile: FigmaRestApi.ComponentWithPageInfo[],
   projectInfo: ProjectInfo<CodeConnectConfig> | ReactProjectInfo,
 ) {
   const dir = getDir(cmd)
@@ -592,7 +640,7 @@ export async function getUnconnectedComponentsAndConnectedComponentMappings(
     {} as Record<string, CodeConnectJSON>,
   )
 
-  const unconnectedComponents: FigmaRestApi.Component[] = []
+  const unconnectedComponents: FigmaRestApi.ComponentWithPageInfo[] = []
   const connectedComponentsMappings: ConnectedComponentMappings = []
 
   const gitRootPath = getGitRepoAbsolutePath(dir)
@@ -610,7 +658,11 @@ export async function getUnconnectedComponentsAndConnectedComponentMappings(
         filepathExport: relativePath ?? '(Unknown file)',
       })
     } else {
-      unconnectedComponents.push(c)
+      if (shouldSkipComponent(c)) {
+        logger.info('Skipping component', c.name, 'on page', c.page.name)
+      } else {
+        unconnectedComponents.push(c)
+      }
     }
   })
 
@@ -763,6 +815,8 @@ export async function runWizard(cmd: BaseCommand) {
     type: 'text',
     message: 'What is the URL of the Figma file containing your design system library?',
     name: 'figmaFileUrl',
+    initial:
+      'https://www.figma.com/design/ChsbbO7pLomT4F5H6tQyLP/Salt-(Next)-Components-%26-Patterns',
     validate: (value: string) => isValidFigmaUrl(value) || 'Please enter a valid Figma file URL.',
   })
 
@@ -798,24 +852,24 @@ export async function runWizard(cmd: BaseCommand) {
     }
   }
 
-  const { useAi: useAiSelection } = await askQuestionOrExit({
-    type: 'select',
-    name: 'useAi',
-    message:
-      'Code Connect offers AI support for accurate prop mapping between Figma and code components. Data is used only for mapping and is not stored or used for training. To learn more, visit https://help.figma.com/hc/en-us/articles/23920389749655-Code-Connect',
-    choices: [
-      {
-        title: 'Do not use AI for prop mapping (default)',
-        value: 'no',
-      },
-      {
-        title: 'Use AI for prop mapping',
-        value: 'yes',
-      },
-    ],
-  })
+  // const { useAi: useAiSelection } = await askQuestionOrExit({
+  //   type: 'select',
+  //   name: 'useAi',
+  //   message:
+  //     'Code Connect offers AI support for accurate prop mapping between Figma and code components. Data is used only for mapping and is not stored or used for training. To learn more, visit https://help.figma.com/hc/en-us/articles/23920389749655-Code-Connect',
+  //   choices: [
+  //     {
+  //       title: 'Do not use AI for prop mapping (default)',
+  //       value: 'no',
+  //     },
+  //     {
+  //       title: 'Use AI for prop mapping',
+  //       value: 'yes',
+  //     },
+  //   ],
+  // })
 
-  const useAi = useAiSelection === 'yes'
+  const useAi = false
 
   const linkedNodeIdsToFilepathExports = {}
 
@@ -868,13 +922,10 @@ export async function runWizard(cmd: BaseCommand) {
     cmd,
   })
 
-  const unconnectedComponentsMap = unconnectedComponents.reduce(
-    (map, component) => {
-      map[component.id] = component
-      return map
-    },
-    {} as Record<string, FigmaRestApi.Component>,
-  )
+  const unconnectedComponentsMap = unconnectedComponents.reduce((map, component) => {
+    map[component.id] = component
+    return map
+  }, {} as Record<string, FigmaRestApi.Component>)
 
   await createCodeConnectFiles({
     linkedNodeIdsToFilepathExports,

@@ -40,17 +40,17 @@ export function parseFileKey(figmaNodeUrl: string) {
 }
 
 /**
- * Parses components from a Rest API response
- * @param document
+ * /Parses components from a Rest API response
+ * @param withinNode
  * @param nodeIds
  * @returns
  */
-export function findComponentsInDocument(
-  document: FigmaRestApi.Node,
+export function findComponentsWithinNode(
+  withinNode: FigmaRestApi.Node,
   nodeIds?: string[],
 ): FigmaRestApi.Component[] {
   const components: FigmaRestApi.Component[] = []
-  const stack = [document]
+  const stack = [withinNode]
 
   while (stack.length > 0) {
     const node = stack.pop()!
@@ -67,6 +67,33 @@ export function findComponentsInDocument(
     if (Array.isArray(node.children) && !isComponent(node)) {
       stack.push(...node.children)
     }
+  }
+
+  return components
+}
+
+/**
+ * /Parses components from a Rest API response
+ * @param withinNode
+ * @param nodeIds
+ * @returns
+ */
+export function findComponentsWithPageInfoInDoc(
+  document: FigmaRestApi.Node,
+  nodeIds?: string[],
+): FigmaRestApi.ComponentWithPageInfo[] {
+  const components: FigmaRestApi.ComponentWithPageInfo[] = []
+  for (const canvas of document.children) {
+    if (canvas.type !== 'CANVAS') {
+      throw new Error('Document passed in does not have correct canvas as child')
+    }
+    const componentsInPage = findComponentsWithinNode(canvas, nodeIds)
+    components.push(
+      ...componentsInPage.map((component) => ({
+        ...component,
+        page: { name: canvas.name, id: canvas.id, type: canvas.type },
+      })),
+    )
   }
 
   return components

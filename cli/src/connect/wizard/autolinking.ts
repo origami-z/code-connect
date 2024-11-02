@@ -49,9 +49,9 @@ export function getBestMatchingExportWithinFile({
    * fuzzy.search searches for string inside another, meaning e.g. "Button" and "ButtonProps" rank equally for "Button".
    * We counter this by looking for shortest string in matches
    */
-  const shortestMatch = matches.reduce(function (a, b) {
+  const shortestMatch = matches.reduce(function (a: string, b: string) {
     return a.length <= b.length ? a : b
-  })
+  }, matches[0])
 
   if (shortestMatch) {
     return exportOptions.find((o) => o.title === shortestMatch)!.value
@@ -71,7 +71,7 @@ export function autoLinkComponents({
   linkedNodeIdsToFilepathExports,
   filepathExports,
 }: {
-  unconnectedComponents: FigmaRestApi.Component[]
+  unconnectedComponents: FigmaRestApi.ComponentWithPageInfo[]
   linkedNodeIdsToFilepathExports: Record<string, string>
   filepathExports: string[]
 }) {
@@ -100,7 +100,8 @@ export function autoLinkComponents({
   const searcher = new Searcher(searchSpace)
 
   unconnectedComponents.forEach((component) => {
-    const matchableName = component.name
+    // Only use page name to search, page name + component name doesn't work
+    const matchableName = component.page.name //  + ' ' + component.name
     const results = searcher.search(matchableName, { returnMatchData: true })
     const bestMatch = results[0]
     const filename = bestMatch?.item
@@ -114,7 +115,7 @@ export function autoLinkComponents({
       linkedNodeIdsToFilepathExports[component.id] = getBestMatchingExportWithinFile({
         filepath,
         exportOptions: componentOptionsMap[filepath],
-        nameToMatch: component.name,
+        nameToMatch: matchableName,
       })
       pathMatchScores[bestMatch.item] = { nodeId: component.id, score: bestMatch.score }
     }
