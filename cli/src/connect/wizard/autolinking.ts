@@ -115,7 +115,7 @@ export function autoLinkComponents({
       linkedNodeIdsToFilepathExports[component.id] = getBestMatchingExportWithinFile({
         filepath,
         exportOptions: componentOptionsMap[filepath],
-        nameToMatch: component.name,
+        nameToMatch: matchableName,
       })
       pathMatchScores[bestMatch.item] = { nodeId: component.id, score: bestMatch.score }
     }
